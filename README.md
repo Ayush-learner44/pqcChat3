@@ -1,362 +1,129 @@
-You cannot literally "copy and paste" my memory/brain to a new chat, but you **CAN** do a "Clean Start" by taking the **Working Code** we just designed and pasting it there as your starting point.
 
-Starting fresh is a **very good idea**. The "Ghost Data" in your database and the browser cache issues are causing 90% of your pain.
+# Post-Quantum Secure Chat Application (Assignment 5)
 
-Here is your **"Migration Kit"**.
+## Security Upgrade: PQC & AES-GCM
+This project upgrades the standard chat application (from Assignment 3) to be **Post-Quantum Cryptography (PQC) Secure**. It implements a hybrid cryptographic scheme using **ML-KEM (Kyber)** for key exchange and **AES-256-GCM** for message encryption, protecting user communication against future quantum computer attacks ("Harvest Now, Decrypt Later").
 
-I have consolidated the **FINAL, CORRECTED Code** that includes:
+###  Key Security Features
+1.  **Post-Quantum Key Exchange (KEM):** Uses **ML-KEM-768 (Kyber)** to securely transport session keys.
+2.  **Double Ratchet Encryption:** Every message is encrypted twice—once for the receiver and once for the sender (Self-Encryption)—enabling secure history access without storing plaintext.
+3.  **Forward Secrecy:** Session keys are ephemeral and exist only in RAM. They are never stored on disk or databases.
+4.  **Side-Channel Protection:** Private keys are loaded from a physical file into volatile memory (RAM) and wiped upon logout/refresh. No keys are stored in `localStorage` or `cookies` to prevent XSS extraction.
+5.  **Authenticated Encryption:** Uses **AES-256-GCM** to ensure both confidentiality and integrity (tamper-proofing).
 
-1.  **Double Encryption:** Fixes the "I can't see my own messages" error.
-2.  **Instant UI Updates:** Fixes the "Realtime lag" issue.
-3.  **Capsule Redundancy:** Fixes the "Alice sees nothing" issue.
+---
 
-Copy these **4 Files** into your project. Then wipe your database one last time. **This IS the working encryption/decryption system.**
+## Live Deployment (Optional)
+The project is designed to run locally for maximum security demonstration. If deployed, ensure the `.env` variables are set correctly on the server.
 
------
+---
 
-### File 1: `utils/crypto.js`
+## Screenshots
 
-*(The Brain - No changes, just ensuring you have the clean version)*
+### 1. Secure Registration & Key Generation
+*Users generate a PQC Identity Pair locally. The Public Key is sent to the server, and the Private Key is auto-downloaded to the user's device.*
+![Register Page](public/screenshots/register_pqc.png)
 
-```javascript
-import { MlKem768 } from "mlkem";
-import crypto from 'crypto';
+### 2. Identity-Based Login (Key File)
+*Login requires uploading the physical `.key` file. No passwords are used.*
+![Login Page](public/screenshots/login_pqc.png)
 
-// 1. AES-GCM ENCRYPTION
-export const encryptGCM = (text, sessionKey) => {
-    try {
-        const iv = crypto.randomBytes(12);
-        const keyBuffer = Buffer.from(sessionKey);
-        const cipher = crypto.createCipheriv('aes-256-gcm', keyBuffer, iv);
-        
-        let encrypted = cipher.update(text, 'utf8', 'hex');
-        encrypted += cipher.final('hex');
-        
-        const tag = cipher.getAuthTag().toString('hex');
-        
-        return {
-            iv: iv.toString('hex'),
-            content: encrypted,
-            tag: tag
-        };
-    } catch (err) {
-        console.error("Encryption Failed:", err);
-        return null;
-    }
-};
+### 3. Encrypted Chat Interface
+*Real-time secure chat. Messages are encrypted end-to-end.*
+![Chat Interface](public/screenshots/chat_pqc.png)
 
-// 2. AES-GCM DECRYPTION
-export const decryptGCM = (packet, sessionKey) => {
-    try {
-        if (!packet || !packet.iv || !packet.tag || !packet.content) return null;
+### 4. MongoDB Storage (Encrypted)
+*Database stores only encrypted packets and KEM capsules. No plaintext.*
+![MongoDB Encrypted](public/screenshots/mongodb_pqc.png)
 
-        const iv = Buffer.from(packet.iv, 'hex');
-        const tag = Buffer.from(packet.tag, 'hex');
-        const keyBuffer = Buffer.from(sessionKey);
+---
 
-        const decipher = crypto.createDecipheriv('aes-256-gcm', keyBuffer, iv);
-        
-        decipher.setAuthTag(tag);
+## Architecture & Workflow
 
-        let decrypted = decipher.update(packet.content, 'hex', 'utf8');
-        decrypted += decipher.final('utf8');
-        
-        return decrypted;
-    } catch (err) {
-        console.error("Decryption Failed:", err);
-        throw new Error("Integrity check failed"); // Throw so UI knows to show error
-    }
-};
+### The Hybrid PQC Scheme
+1.  **Registration:** Client generates `Kyber-768` Keypair. Public Key -> MongoDB. Private Key -> User's Disk.
+2.  **Handshake:** Sender fetches Recipient's Public Key -> Encapsulates a shared secret (AES Key) -> Sends Capsule.
+3.  **Transport:** Messages are encrypted using **AES-256-GCM** with the shared secret.
+4.  **History:** Sender performs a second encapsulation for themselves to securely store "Sent" messages in the database.
 
-// 3. GENERATE IDENTITY
-export const generateIdentity = async () => {
-    const bob = new MlKem768();
-    const [pk, sk] = await bob.generateKeyPair();
-    return {
-        publicKey: Buffer.from(pk).toString('hex'),
-        privateKey: sk
-    };
-};
+```mermaid
+sequenceDiagram
+    participant Alice (Client)
+    participant Server (MongoDB)
+    participant Bob (Client)
 
-// 4. KEY EXCHANGE (ENCAPS)
-export const performKeyExchange = async (recipientPublicKeyHex) => {
-    const alice = new MlKem768();
-    const pkBytes = Buffer.from(recipientPublicKeyHex, 'hex');
-    const [capsule, sharedSecret] = await alice.encap(pkBytes);
-    return {
-        capsule: Buffer.from(capsule).toString('hex'),
-        sharedSecret: sharedSecret
-    };
-};
-
-// 5. RECOVER KEY (DECAPS)
-export const recoverSessionKey = async (capsuleHex, privateKeyBytes) => {
-    const bob = new MlKem768();
-    const capsuleBytes = Buffer.from(capsuleHex, 'hex');
-    const sharedSecret = await bob.decap(capsuleBytes, privateKeyBytes);
-    return sharedSecret;
-};
-```
+    Note over Alice: 1. Generate AES Session Key
+    Note over Alice: 2. Encapsulate for Bob (Kyber)
+    Alice->>Server: Send { Ciphertext + Capsule }
+    Server->>Bob: Push via Socket.io
+    Note over Bob: 3. Decapsulate (Kyber) -> Get AES Key
+    Note over Bob: 4. Decrypt Message (AES-GCM)
+````
 
 -----
 
-### File 2: `pages/api/message.js`
+## Tech Stack
 
-*(The Storage - Updated to save Sender's Copy so you can read your own history)*
-
-```javascript
-import { MongoClient } from "mongodb";
-
-const uri = process.env.MONGODB_URI;
-let client;
-let clientPromise;
-
-if (!global._mongoClientPromise) {
-    client = new MongoClient(uri);
-    global._mongoClientPromise = client.connect();
-}
-clientPromise = global._mongoClientPromise;
-
-export default async function handler(req, res) {
-    const client = await clientPromise;
-    const db = client.db("chatapp"); // Ensure this matches your Compass DB Name!
-    const messages = db.collection("messages");
-
-    if (req.method === "POST") {
-        // We now expect TWO packets: one for receiver, one for sender
-        const { from, to, packet, capsule, senderPacket, senderCapsule } = req.body;
-        
-        if (!from || !to || !packet) return res.status(400).json({ message: "Missing fields" });
-
-        const doc = { 
-            from, 
-            to, 
-            packet,         // For Receiver (Alice)
-            capsule,        // Key for Receiver
-            senderPacket,   // For Sender (Bob) - FIXES HISTORY
-            senderCapsule,  // Key for Sender
-            time: new Date() 
-        };
-        
-        await messages.insertOne(doc);
-        return res.status(200).json({ message: "Message stored", doc });
-    }
-
-    if (req.method === "GET") {
-        const { user1, user2 } = req.query;
-        if (!user1 || !user2) return res.status(400).json({ message: "Missing params" });
-        
-        const history = await messages
-            .find({
-                $or: [
-                    { from: user1, to: user2 },
-                    { from: user2, to: user1 },
-                ],
-            })
-            .sort({ time: 1 })
-            .toArray();
-            
-        return res.status(200).json(history);
-    }
-}
-```
+  - **Frontend:** Next.js (React)
+  - **Cryptography:**
+      - `mlkem` (NIST FIPS 203 Standard / Kyber)
+      - `crypto` (Node.js native AES-256-GCM)
+  - **Backend:** Node.js (Custom Server)
+  - **Real-Time:** Socket.IO
+  - **Database:** MongoDB Atlas
 
 -----
 
-### File 3: `server.js`
+## Installation & Setup
 
-*(The Relay - Updated to pass the capsule so Alice gets the key instantly)*
+### 1\. Clone the repository
 
-```javascript
-// ... imports same as before ...
-// inside io.on("connection") ...
-
-        // Socket Relay
-        socket.on("send-message", ({ to, packet, capsule }) => {
-            console.log(`📩 Relay msg from ${socket.username} -> ${to}`);
-            
-            // Send the packet AND the capsule to the recipient
-            // This ensures Alice can decrypt even if she missed the handshake
-            io.to(to).emit("receive-message", {
-                from: socket.username,
-                packet: packet,
-                capsule: capsule, 
-                time: new Date().toISOString()
-            });
-        });
-// ... rest of server code ...
+```bash
+git clone <repo-url>
+cd pqc-chatapp
 ```
+
+### 2\. Install dependencies
+
+```bash
+npm install
+```
+
+### 3\. Configure Environment
+
+Create a `.env.local` file in the root directory:
+
+```bash
+MONGODB_URI=your_mongodb_connection_string
+```
+
+### 4\. Run the Secure Server
+
+**Important:** Do not use `next dev`. You must run the custom server to enable Socket.IO and Environment variables correctly.
+
+```bash
+npm run dev
+# OR
+node server.js
+```
+
+### 5\. Access the App
+
+Open [http://localhost:3000](https://www.google.com/search?q=http://localhost:3000).
 
 -----
 
-### File 4: `app/chat/page.js`
+##  Learning Outcomes
 
-*(The UI - Implements Double Encryption & Instant Updates)*
+  - **Applied Cryptography:** Implemented NIST-standard Post-Quantum algorithms (ML-KEM) in a real-world web app.
+  - **Secure Architecture:** Designed a "Zero-Knowledge" storage system where the server never sees the private key.
+  - **Memory Management:** Learned to handle sensitive keys in RAM (`useRef`) to prevent persistent storage leaks.
+  - **Hybrid Protocol:** Combined Asymmetric (KEM) and Symmetric (AES) encryption for performance and security.
+  - **React State Management:** Managed complex asynchronous crypto state for seamless real-time UI updates.
 
-```javascript
-"use client";
-import { useEffect, useState, useRef, Suspense } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
-import io from "socket.io-client";
-import { encryptGCM, decryptGCM, performKeyExchange, recoverSessionKey } from "../../utils/crypto"; 
-import "./chat.css";
+-----
 
-export const dynamic = "force-dynamic";
-export const fetchCache = "force-no-store";
+## Security Notice
 
-function ChatPageInner() {
-    const router = useRouter();
-    const searchParams = useSearchParams();
-    const socketRef = useRef(null);
-    const messagesEndRef = useRef(null);
-
-    const [username, setUsername] = useState("");
-    const [recipient, setRecipient] = useState("");
-    const [connected, setConnected] = useState(false);
-    const [message, setMessage] = useState("");
-    const [chat, setChat] = useState([]);
-    const [users, setUsers] = useState([]);
-    const [onlineUsers, setOnlineUsers] = useState([]);
-
-    const [myPrivateKey, setMyPrivateKey] = useState(null);
-    const [sessionKey, setSessionKey] = useState(null);
-
-    // 1. INITIALIZE & LOAD KEY
-    useEffect(() => {
-        const u = searchParams.get("user");
-        if (u) setUsername(u);
-        const storedKeyB64 = sessionStorage.getItem("chat_session_key");
-        if (storedKeyB64) {
-            const binaryString = atob(storedKeyB64);
-            const bytes = new Uint8Array(binaryString.length);
-            for (let i = 0; i < binaryString.length; i++) bytes[i] = binaryString.charCodeAt(i);
-            setMyPrivateKey(bytes);
-        } else { router.push("/"); }
-    }, [searchParams, router]);
-
-    // 2. SOCKETS & DECRYPTION LISTENER
-    useEffect(() => {
-        socketRef.current = io();
-        socketRef.current.on("connect", () => {
-            if (username) socketRef.current.emit("register-user", username);
-        });
-        socketRef.current.on("online-users", (active) => setOnlineUsers(active));
-
-        // RECEIVE MESSAGE LOGIC
-        socketRef.current.on("receive-message", async (data) => {
-            if (data.to !== username) return; // Not for me
-
-            let text = "🔒 [Decryption Failed]";
-            
-            // Try to decrypt using the attached capsule (Auto-Recover Key)
-            if (data.capsule && myPrivateKey) {
-                try {
-                    const tempKey = await recoverSessionKey(data.capsule, myPrivateKey);
-                    setSessionKey(tempKey); // Update session
-                    text = decryptGCM(data.packet, tempKey);
-                } catch (e) { console.error("Decryption err", e); }
-            } 
-            // Fallback: Try existing session key
-            else if (sessionKey) {
-                try { text = decryptGCM(data.packet, sessionKey); } catch(e){}
-            }
-
-            setChat((prev) => [...prev, { from: data.from, text: text, time: data.time }]);
-        });
-
-        return () => { socketRef.current && socketRef.current.disconnect(); };
-    }, [username, sessionKey, myPrivateKey]);
-
-    useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [chat]);
-
-    // 3. SEND MESSAGE (DOUBLE ENCRYPTION FIX)
-    const sendMessage = async () => {
-        if (!message.trim()) return;
-
-        // A. Get Keys
-        const resBob = await fetch(`/api/getPublicKey?username=${encodeURIComponent(recipient)}`);
-        const bobData = await resBob.json();
-        const resMe = await fetch(`/api/getPublicKey?username=${encodeURIComponent(username)}`);
-        const meData = await resMe.json();
-
-        if (!bobData.publicKey || !meData.publicKey) { alert("Public Keys missing!"); return; }
-
-        // B. Encrypt for BOB (Receiver)
-        const exBob = await performKeyExchange(bobData.publicKey);
-        const packetBob = encryptGCM(message, exBob.sharedSecret);
-
-        // C. Encrypt for ME (Sender History)
-        const exMe = await performKeyExchange(meData.publicKey);
-        const packetMe = encryptGCM(message, exMe.sharedSecret);
-
-        // D. Save to DB (Both versions)
-        const msgPayload = { 
-            from: username, to: recipient, 
-            packet: packetBob, capsule: exBob.capsule,
-            senderPacket: packetMe, senderCapsule: exMe.capsule
-        };
-        await fetch("/api/message", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(msgPayload),
-        });
-
-        // E. Send Socket (To Bob)
-        socketRef.current.emit("send-message", { 
-            to: recipient, 
-            packet: packetBob,
-            capsule: exBob.capsule 
-        });
-
-        // F. Show Instantly (Plaintext)
-        setChat((prev) => [...prev, { from: username, text: message, time: new Date().toISOString() }]);
-        setMessage("");
-        setSessionKey(exBob.sharedSecret); // Ready to receive reply
-    };
-
-    // 4. LOAD HISTORY (SMART DECRYPTION)
-    const loadHistory = async () => {
-        const res = await fetch(`/api/message?user1=${encodeURIComponent(username)}&user2=${encodeURIComponent(recipient)}`);
-        const history = await res.json();
-        
-        const decrypted = await Promise.all(history.map(async (msg) => {
-            try {
-                // If I am sender, look for 'senderCapsule'. If receiver, look for 'capsule'.
-                const isMe = msg.from === username;
-                const targetCapsule = isMe ? msg.senderCapsule : msg.capsule;
-                const targetPacket  = isMe ? msg.senderPacket : msg.packet;
-
-                if (targetCapsule && myPrivateKey) {
-                    const k = await recoverSessionKey(targetCapsule, myPrivateKey);
-                    return { from: msg.from, text: decryptGCM(targetPacket, k), time: msg.time };
-                }
-                return { from: msg.from, text: "🔒 [Key Missing]", time: msg.time };
-            } catch (e) { return { from: msg.from, text: "⚠️ [Error]", time: msg.time }; }
-        }));
-        setChat(decrypted);
-    };
-
-    // ... (Keep your JSX Render logic here, it is fine) ...
-    // Just ensure the 'Connect' button calls loadHistory()
-    const connect = async () => {
-        if (!recipient.trim()) return;
-        setConnected(true);
-        loadHistory();
-    };
-
-    return (
-        /* ... Paste your existing JSX return (...) here ... */
-        /* Just make sure Connect button calls connect() */
-        <div className="chat-page">
-             {/* ... UI Code ... */}
-             <button onClick={sendMessage}>Send</button>
-        </div>
-    );
-}
-
-export default function ChatPage() {
-    return <Suspense fallback={<div>Loading...</div>}><ChatPageInner /></Suspense>;
-}
-```
-
-Take these files. This is the **Final Working Logic**. Start your new chat with this foundation. Good luck.
+  * This application uses **RAM-only key management**. Refreshing the page wipes the keys from memory for security. You must re-upload your key file to reconnect.
+  * The `.key` file downloaded during registration is the **ONLY** way to access your account. If lost, the account is unrecoverable.
