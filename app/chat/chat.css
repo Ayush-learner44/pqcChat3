@@ -150,16 +150,32 @@
     background: #2563eb;
 }
 
+.connect-button:hover {
+    background: #123a90;
+}
+
 .refresh-button {
     background: #f59e0b;
+}
+
+.refresh-button {
+    background: #c58008;
 }
 
 .delete-button {
     background: #ef4444;
 }
 
+.delete-button {
+    background: #af3232;
+}
+
 .disconnect-button {
     background: #4b5563;
+}
+
+.disconnect-button {
+    background: #313740;
 }
 
 /* 5. CHAT WINDOW - SCROLL AREA */
@@ -257,6 +273,11 @@
     border-radius: 6px;
     font-weight: bold;
     cursor: pointer;
+}
+
+.send-button:hover {
+    background: #0d9a6b;
+
 }
 
 /* 7. MOBILE OVERRIDES - THE FIX */
