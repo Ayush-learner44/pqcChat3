@@ -70,10 +70,10 @@ export default function HomePage() {
 
                 {/* 1. USERNAME INPUT */}
                 <div className="input-group">
-                    <label className="input-label">Username</label>
+
                     <input
                         type="text"
-                        placeholder="e.g. alice"
+                        placeholder="Username"
                         value={username}
                         onChange={(e) => setUsername(e.target.value)}
                         className="text-input"
