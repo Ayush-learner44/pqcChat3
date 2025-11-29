@@ -16,6 +16,20 @@
     overflow: hidden;
 }
 
+.chat-container {
+    width: 100%;
+    max-width: 800px;
+    /* Controls width of BOTH Top Bar and Card */
+    height: 90vh;
+    /* Total height of the widget */
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    /* Gap between Top Bar and Card */
+}
+
+
+
 /* 2. TOP BAR */
 .top-bar {
     width: 100%;
@@ -25,7 +39,7 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 0 2.5rem;
+    padding: 0 0.5rem;
     box-sizing: border-box;
 }
 
@@ -80,19 +94,39 @@
     /* Wrap on mobile */
 }
 
-/* Input Box */
-.recipient-input {
-    flex: 1 1 180px;
-    /* Base width */
+/* SELECT DROPDOWN STYLE */
+.recipient-select {
+    flex-grow: 10;
+    /* Takes up the most space in the row */
     padding: 0 0.8rem;
+    /* Comfortable padding */
+    height: 38px;
+    /* Exact height match for buttons */
     border: 1px solid #d1d5db;
     border-radius: 6px;
     font-size: 0.95rem;
-    height: 40px;
-    box-sizing: border-box;
-    color: #000;
-    background: #fff;
+    background-color: #ffffff;
+    /* Force White */
+    color: #1f2937;
+    /* Dark Gray Text (High Contrast) */
+    cursor: pointer;
+    min-width: 150px;
+    /* Prevents it from crushing too small */
+
+    /* Standard Browser Appearance (Reliable across Firefox/Chrome/Edge) */
+    appearance: auto;
+    -webkit-appearance: auto;
 }
+
+.recipient-select:focus {
+    outline: none;
+    border-color: #2563eb;
+    /* Blue border when clicked */
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+    /* Subtle blue glow */
+}
+
+
 
 /* Buttons */
 .connect-button,
@@ -232,6 +266,13 @@
         /* Remove padding */
     }
 
+    .chat-container {
+        height: 100dvh;
+        /* Full screen on phone */
+        max-width: 100%;
+        gap: 0;
+    }
+
     .chat-card {
         /* MOBILE HEIGHT: Force full screen height */
         height: 100dvh !important;
@@ -251,11 +292,11 @@
         padding: 0.5rem;
     }
 
-    .recipient-input {
+    .recipient-select {
         width: 100%;
         flex-basis: 100%;
-        /* Input takes full row */
-        margin-bottom: 2px;
+        /* Force full width on mobile */
+        margin-bottom: 5px;
     }
 
     /* Buttons: 2 per row */

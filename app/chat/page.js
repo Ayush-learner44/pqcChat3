@@ -320,51 +320,62 @@ function ChatPageInner() {
 
     return (
         <div className="chat-page">
-            <div className="top-bar">
-                <button onClick={() => router.push("/")} className="home-button">Home</button>
-                <span className="profile-badge">User: <strong>{username}</strong></span>
-            </div>
+            <div className="chat-container">
+                <div className="top-bar">
+                    <button onClick={() => router.push("/")} className="home-button">Home</button>
+                    <span className="profile-badge">User: <strong>{username}</strong></span>
+                </div>
 
-            <div className="chat-center">
-                <div className="chat-card">
-                    <div className="recipient-row">
-                        <input
-                            list="user-list"
-                            className="recipient-input"
-                            placeholder="Type or Select User..."
-                            value={recipient}
-                            onChange={handleUserSelect}
-                        />
-                        <datalist id="user-list">
-                            {users.filter(u => u !== username).map((u, i) => (
-                                <option key={i} value={u}>
-                                    {onlineUsers.includes(u) ? "🟢 Online" : "⚪ Offline"}
-                                </option>
-                            ))}
-                        </datalist>
+                <div className="chat-center">
+                    <div className="chat-card">
+                        <div className="recipient-row">
 
-                        <button onClick={connect} className="connect-button">Connect</button>
-                        <button onClick={() => setChat([])} className="refresh-button">Clear</button>
-                        <button onClick={async () => {
-                            await fetch("/api/deleteMessages", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ user1: username, user2: recipient }) });
-                            setChat([]);
-                        }} className="delete-button">Delete</button>
-                        <button onClick={disconnect} className="disconnect-button">Disconnect</button>
-                    </div>
+                            <select
+                                value={recipient}
+                                onChange={(e) => {
 
-                    <div className="chat-window">
-                        <div className="messages">
-                            {chat.map((c, i) => (
-                                <div key={i} className={`message ${c.from === username ? "me" : c.from === "system" ? "system" : "them"}`}>
-                                    <span className="from">{c.from === username ? "me" : c.from}:</span> {c.text}
-                                    {c.time && <span className="timestamp"> {new Date(c.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>}
-                                </div>
-                            ))}
-                            <div ref={messagesEndRef} />
+                                    setRecipient(e.target.value);
+                                    // Clear chat immediately on switch for that "Realtime" feel
+                                    if (e.target.value !== recipient) {
+                                        setChat([]);
+                                        setConnected(false);
+                                        sessionKeyRef.current = null;
+                                    }
+                                }}
+                                className="recipient-select"
+                            >
+                                <option value="" disabled>Select User...</option>
+                                {users.filter(u => u !== username).map((u, i) => (
+                                    <option key={i} value={u}>
+                                        {u} {onlineUsers.includes(u) ? "🟢" : "⚪"}
+                                    </option>
+                                ))}
+                            </select>
+
+
+                            <button onClick={connect} className="connect-button">Connect</button>
+                            <button onClick={() => setChat([])} className="refresh-button">Clear</button>
+                            <button onClick={async () => {
+                                await fetch("/api/deleteMessages", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ user1: username, user2: recipient }) });
+                                setChat([]);
+                            }} className="delete-button">Delete</button>
+                            <button onClick={disconnect} className="disconnect-button">Disconnect</button>
                         </div>
-                        <div className="input-row">
-                            <input value={message} onChange={e => setMessage(e.target.value)} className="message-input" placeholder="Type..." />
-                            <button onClick={sendMessage} className="send-button">Send</button>
+
+                        <div className="chat-window">
+                            <div className="messages">
+                                {chat.map((c, i) => (
+                                    <div key={i} className={`message ${c.from === username ? "me" : c.from === "system" ? "system" : "them"}`}>
+                                        <span className="from">{c.from === username ? "me" : c.from}:</span> {c.text}
+                                        {c.time && <span className="timestamp"> {new Date(c.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>}
+                                    </div>
+                                ))}
+                                <div ref={messagesEndRef} />
+                            </div>
+                            <div className="input-row">
+                                <input value={message} onChange={e => setMessage(e.target.value)} className="message-input" placeholder="Type..." />
+                                <button onClick={sendMessage} className="send-button">Send</button>
+                            </div>
                         </div>
                     </div>
                 </div>
