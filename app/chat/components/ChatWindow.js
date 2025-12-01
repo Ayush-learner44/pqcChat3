@@ -1,4 +1,4 @@
-// app/chat/components/ChatWindow.js
+
 import { useEffect, useRef } from "react";
 
 export default function ChatWindow({ chat, currentUser, message, setMessage, onSendMessage, connected }) {
