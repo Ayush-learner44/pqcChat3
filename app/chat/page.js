@@ -8,9 +8,6 @@ import ControlPanel from "./components/ControlPanel";
 import ChatWindow from "./components/ChatWindow";
 import toast from "react-hot-toast";
 
-
-
-
 import "./chat.css";
 
 export const dynamic = "force-dynamic";
@@ -174,8 +171,10 @@ function ChatPageInner() {
                 mySessionKeyRef.current = sharedSecret; // Simplify for initial connect or fetch self key
                 // Ideally fetch self key here too for symmetry, but for now just get moving:
                 setConnected(true);
-                toast.success(`Connected To ${encodeURIComponent(recipient)}`);
-
+                toast.success(`Connected to ${decodeURIComponent(recipient)}`, {
+                    duration: 3000,
+                    icon: "✔️",
+                });
                 socketRef.current.emit("handshake_packet", { to: recipient, capsule: capsule });
             } else { alert("User keys not found"); }
         } catch (e) { console.error(e); }
@@ -250,7 +249,10 @@ function ChatPageInner() {
         if (sessionKeyRef.current) try { sessionKeyRef.current.fill(0); } catch (e) { }
         sessionKeyRef.current = null;
         setConnected(false);
-        toast.success(`${encodeURIComponent(recipient)} Disconnected!`)
+        toast.success(`${decodeURIComponent(recipient)} Disconnected!`, {
+            duration: 3000,
+            icon: "❎",   // clean cross mark for disconnect
+        });
         setRecipient("");
         setChat([]);
     };
@@ -273,9 +275,13 @@ function ChatPageInner() {
                         currentUser={username}
                         onSelectUser={handleUserSelect}
                         onConnect={connect}
-                        onClear={() => setChat([])}
+                        onClear={() => {
+                            toast.success(`Screen Cleared!`, { duration: 3000, icon: "🧹" });
+                            setChat([]);
+                        }}
                         onDelete={async () => {
                             await fetch("/api/deleteMessages", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ user1: username, user2: recipient }) });
+                            toast.success(`Chat History Cleared!`, { duration: 3000, icon: "🗑️" });
                             setChat([]);
                         }}
                         onDisconnect={disconnect}
