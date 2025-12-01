@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import io from "socket.io-client";
+// import { encryptGCM, decryptGCM, performKeyExchange, recoverSessionKey } from "../../utils/crypto";
 import ControlPanel from "./components/ControlPanel";
 import ChatWindow from "./components/ChatWindow";
 import toast from "react-hot-toast";
@@ -22,7 +23,7 @@ function ChatPageInner() {
 
     // REFS
     const socketRef = useRef(null);
-    const myPrivateKeyRef = useRef(null); // Stores Uint8Array (Bytes)
+    const myPrivateKeyRef = useRef(null);
     const activeRecipientRef = useRef("");
 
     const sessionKeyRef = useRef(null);
@@ -33,7 +34,7 @@ function ChatPageInner() {
 
     // STATE
     const [username, setUsername] = useState("");
-    const [recipient, setRecipient] = useState("");
+    const [recipient, setRecipient] = useState(""); // <--- This drives the dropdown
     const [connected, setConnected] = useState(false);
     const [message, setMessage] = useState("");
     const [chat, setChat] = useState([]);
@@ -52,6 +53,7 @@ function ChatPageInner() {
             const bytes = new Uint8Array(binaryString.length);
             for (let i = 0; i < binaryString.length; i++) bytes[i] = binaryString.charCodeAt(i);
             myPrivateKeyRef.current = bytes;
+
         } else { router.push("/"); }
     }, [searchParams, router]);
 
@@ -68,11 +70,10 @@ function ChatPageInner() {
         socketRef.current.on("connect", () => { /* Wait for user */ });
         socketRef.current.on("online-users", setOnlineUsers);
 
-        // --- HANDSHAKE LISTENER ---
         socketRef.current.on("handshake_received", async (data) => {
             if (!myPrivateKeyRef.current || activeRecipientRef.current !== data.from) return;
             try {
-                // FIXED: Send privateKeyHex instead of bytes
+                // Mirror of old: recoverSessionKey via API
                 const resRecover = await fetch("/api/crypto", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
@@ -80,27 +81,23 @@ function ChatPageInner() {
                         action: "recoverSessionKey",
                         payload: {
                             capsuleHex: data.capsule,
-                            privateKeyHex: Buffer.from(myPrivateKeyRef.current).toString("hex")
+                            privateKeyBytes: Array.from(myPrivateKeyRef.current)
                         }
                     })
                 });
                 const { sharedSecret } = await resRecover.json();
-
-                // sharedSecret is already a hex string now
-                sessionKeyRef.current = sharedSecret;
+                sessionKeyRef.current = sharedSecret; // mirror: just assign
                 setConnected(true);
                 setChat(prev => [...prev, { from: "system", text: `🔐 Key Rotation`, time: new Date().toISOString() }]);
             } catch (err) { console.error(err); }
         });
 
-        // --- MESSAGE LISTENER ---
         socketRef.current.on("receive-message", async (data) => {
             if (data.from !== activeRecipientRef.current && data.from !== username) return;
             let text = "🔒 [Fail]";
-
             if (data.capsule && myPrivateKeyRef.current) {
                 try {
-                    // FIXED: Send privateKeyHex
+                    // Mirror of old: recoverSessionKey via API
                     const resRecover = await fetch("/api/crypto", {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
@@ -108,12 +105,13 @@ function ChatPageInner() {
                             action: "recoverSessionKey",
                             payload: {
                                 capsuleHex: data.capsule,
-                                privateKeyHex: Buffer.from(myPrivateKeyRef.current).toString("hex")
+                                privateKeyBytes: Array.from(myPrivateKeyRef.current)
                             }
                         })
                     });
                     const { sharedSecret } = await resRecover.json();
 
+                    // Mirror of old: decryptGCM via API
                     const resDecrypt = await fetch("/api/crypto", {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
@@ -125,20 +123,19 @@ function ChatPageInner() {
                     const { message: decryptedMsg } = await resDecrypt.json();
                     text = decryptedMsg;
                     setConnected(true);
-                } catch (e) { console.error("Decryption error (New Key):", e); }
+                } catch (e) { }
             } else if (sessionKeyRef.current) {
-                try {
-                    const resDecrypt = await fetch("/api/crypto", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({
-                            action: "decryptGCM",
-                            payload: { packet: data.packet, sessionKey: sessionKeyRef.current }
-                        })
-                    });
-                    const { message: decryptedMsg } = await resDecrypt.json();
-                    text = decryptedMsg;
-                } catch (e) { console.error("Decryption error (Existing Key):", e); }
+                // Mirror of old: decryptGCM via API
+                const resDecrypt = await fetch("/api/crypto", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        action: "decryptGCM",
+                        payload: { packet: data.packet, sessionKey: sessionKeyRef.current }
+                    })
+                });
+                const { message: decryptedMsg } = await resDecrypt.json();
+                text = decryptedMsg;
             }
             setChat(prev => [...prev, { from: data.from, text, time: data.time }]);
         });
@@ -151,7 +148,7 @@ function ChatPageInner() {
     }, [username]);
 
 
-    // 3. TIMER LOGIC
+    // 3. TIMER LOGIC (Same as before)
     useEffect(() => {
         let preGenTimer, swapTimer;
 
@@ -166,6 +163,7 @@ function ChatPageInner() {
                 const meData = await resMe.json();
 
                 if (bobData.publicKey && meData.publicKey) {
+                    // Call API for Bob
                     const resExBob = await fetch("/api/crypto", {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
@@ -176,6 +174,7 @@ function ChatPageInner() {
                     });
                     const exBob = await resExBob.json();
 
+                    // Call API for Me
                     const resExMe = await fetch("/api/crypto", {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
@@ -186,14 +185,9 @@ function ChatPageInner() {
                     });
                     const exMe = await resExMe.json();
 
-                    // Note: sessionKey is now a Hex String. 
-                    // We only wrap in Buffer if we plan to do math/compare in frontend (which we don't really do).
-                    // But for consistency with your variable names, we can store strings or buffers. 
-                    // Let's store STRINGS as that is what the API expects later.
-
                     pendingKeysRef.current = {
-                        sessionKey: exBob.sharedSecret, // String
-                        mySessionKey: exMe.sharedSecret, // String
+                        sessionKey: Buffer.from(exBob.sharedSecret),
+                        mySessionKey: Buffer.from(exMe.sharedSecret),
                         currentCapsule: exBob.capsule,
                         myCapsule: exMe.capsule
                     };
@@ -244,7 +238,7 @@ function ChatPageInner() {
             sessionKeyRef.current = null;
             pendingKeysRef.current = null;
         }
-        setRecipient(newUser);
+        setRecipient(newUser); // ✅ This updates the dropdown UI
     };
 
     const connect = async () => {
@@ -254,6 +248,7 @@ function ChatPageInner() {
             const resKey = await fetch(`/api/getPublicKey?username=${encodeURIComponent(recipient)}`);
             const data = await resKey.json();
             if (data.publicKey) {
+                // Mirror of old: performKeyExchange via API
                 const resEx = await fetch("/api/crypto", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
@@ -264,6 +259,7 @@ function ChatPageInner() {
                 });
                 const { capsule, sharedSecret } = await resEx.json();
 
+                // Mirror of old: just assign sharedSecret
                 sessionKeyRef.current = sharedSecret;
                 mySessionKeyRef.current = sharedSecret;
 
@@ -281,6 +277,8 @@ function ChatPageInner() {
         }
     };
 
+
+
     const loadHistory = async () => {
         const res = await fetch(`/api/message?user1=${encodeURIComponent(username)}&user2=${encodeURIComponent(recipient)}`);
         if (res.ok) {
@@ -292,7 +290,20 @@ function ChatPageInner() {
                     const targetPacket = isMe ? msg.senderPacket : msg.packet;
 
                     if (targetCapsule && myPrivateKeyRef.current) {
-                        // FIXED: Send privateKeyHex
+                        // Mirror of old: recoverSessionKey via API
+                        // const resRecover = await fetch("/api/crypto", {
+                        //     method: "POST",
+                        //     headers: { "Content-Type": "application/json" },
+                        //     body: JSON.stringify({
+                        //         action: "recoverSessionKey",
+                        //         payload: {
+                        //             capsuleHex: targetCapsule,
+                        //             privateKeyBytes: Array.from(myPrivateKeyRef.current)
+                        //         }
+                        //     })
+                        // });
+                        // const { sharedSecret } = await resRecover.json();
+
                         const resRecover = await fetch("/api/crypto", {
                             method: "POST",
                             headers: { "Content-Type": "application/json" },
@@ -300,26 +311,43 @@ function ChatPageInner() {
                                 action: "recoverSessionKey",
                                 payload: {
                                     capsuleHex: targetCapsule,
-                                    privateKeyHex: Buffer.from(myPrivateKeyRef.current).toString("hex")
+                                    privateKeyBytes: Array.from(
+                                        Buffer.isBuffer(myPrivateKeyRef.current) || myPrivateKeyRef.current instanceof Uint8Array
+                                            ? myPrivateKeyRef.current
+                                            : Buffer.from(myPrivateKeyRef.current, "hex")
+                                    )
                                 }
                             })
                         });
                         const { sharedSecret } = await resRecover.json(); // hex string
+
+
+                        // Mirror of old: decryptGCM via API
+                        // const resDecrypt = await fetch("/api/crypto", {
+                        //     method: "POST",
+                        //     headers: { "Content-Type": "application/json" },
+                        //     body: JSON.stringify({
+                        //         action: "decryptGCM",
+                        //         payload: { packet: targetPacket, sessionKey: sharedSecret }
+                        //     })
+                        // });
+                        // const { message: decryptedMsg } = await resDecrypt.json();
 
                         const resDecrypt = await fetch("/api/crypto", {
                             method: "POST",
                             headers: { "Content-Type": "application/json" },
                             body: JSON.stringify({
                                 action: "decryptGCM",
-                                payload: { packet: targetPacket, sessionKey: sharedSecret }
+                                payload: { packet: targetPacket, sessionKey: sharedSecret } // hex
                             })
                         });
                         const { message: decryptedMsg } = await resDecrypt.json();
+
+
                         return { from: msg.from, text: decryptedMsg, time: msg.time };
                     }
                     return { from: msg.from, text: "🔒", time: msg.time };
                 } catch (e) {
-                    console.error("History decryption error:", e);
                     return { from: msg.from, text: "⚠️", time: msg.time };
                 }
             }));
@@ -327,10 +355,12 @@ function ChatPageInner() {
         }
     };
 
+
     const sendMessage = async () => {
         if (!message || !recipient) return;
         if (!sessionKeyRef.current) return alert("Connect first!");
 
+        // Fetch self key for history if needed, or reuse sessionKey if simplified
         const [resBob, resMe] = await Promise.all([
             fetch(`/api/getPublicKey?username=${encodeURIComponent(recipient)}`),
             fetch(`/api/getPublicKey?username=${encodeURIComponent(username)}`)
@@ -338,7 +368,7 @@ function ChatPageInner() {
         const bobData = await resBob.json();
         const meData = await resMe.json();
 
-        // 1. Encrypt for Bob
+        // Full Double Encryption Logic (API calls only; variables unchanged)
         const resExBob = await fetch("/api/crypto", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -349,18 +379,27 @@ function ChatPageInner() {
         });
         const exBob = await resExBob.json();
 
+        // const resEncryptBob = await fetch("/api/crypto", {
+        //     method: "POST",
+        //     headers: { "Content-Type": "application/json" },
+        //     body: JSON.stringify({
+        //         action: "encryptGCM",
+        //         payload: { text: message, sessionKey: exBob.sharedSecret.toString("hex") }
+        //     })
+        // });
+        // const packetBob = await resEncryptBob.json();
+
         const resEncryptBob = await fetch("/api/crypto", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
                 action: "encryptGCM",
-                payload: { text: message, sessionKey: exBob.sharedSecret } // sharedSecret is Hex
+                payload: { text: message, sessionKey: exBob.sharedSecret } // hex
             })
         });
-        const packetBob = await resEncryptBob.json();
+        const packetBob = await resEncryptBob.json(); // { iv, content, tag }
 
 
-        // 2. Encrypt for Me (Sender)
         const resExMe = await fetch("/api/crypto", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -376,12 +415,12 @@ function ChatPageInner() {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
                 action: "encryptGCM",
-                payload: { text: message, sessionKey: exMe.sharedSecret } // FIXED: Removed .toString("hex") as it's already hex
+                payload: { text: message, sessionKey: exMe.sharedSecret.toString("hex") }
             })
         });
         const packetMe = await resEncryptMe.json();
 
-        // Update Session
+        // Update Session (mirror of old logic — no Buffers)
         sessionKeyRef.current = exBob.sharedSecret;
         currentCapsuleRef.current = exBob.capsule;
         mySessionKeyRef.current = exMe.sharedSecret;
@@ -407,17 +446,20 @@ function ChatPageInner() {
         setMessage("");
     };
 
+
     const disconnect = () => {
+        if (sessionKeyRef.current) try { sessionKeyRef.current.fill(0); } catch (e) { }
         sessionKeyRef.current = null;
         setConnected(false);
         toast.success(`${decodeURIComponent(recipient)} Disconnected!`, {
             duration: 3000,
-            icon: "❎",
+            icon: "❎",   // clean cross mark for disconnect
         });
         setRecipient("");
         setChat([]);
     };
 
+    // --- RENDER ---
     return (
         <div className="chat-page">
             <div className="chat-container">
@@ -427,6 +469,7 @@ function ChatPageInner() {
                 </div>
 
                 <div className="chat-card">
+                    {/* COMPONENTS */}
                     <ControlPanel
                         users={users}
                         recipient={recipient}

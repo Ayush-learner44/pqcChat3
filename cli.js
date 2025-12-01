@@ -7,32 +7,41 @@ import {
     decryptGCM
 } from "./utils/crypto.js";
 
+// ... imports ...
+
 async function main() {
     console.log("=== Alice & Bob Secure KEM Demo ===");
 
     // Bob generates identity
     const bob = await generateIdentity();
-    console.log("Bob PK length:", bob.publicKey.length, "SK length:", bob.privateKey.length);
+    // privateKey is now a Hex String, so .length will be double the bytes (4800)
+    console.log("Bob PK len (hex):", bob.publicKey.length, "SK len (hex):", bob.privateKey.length);
 
     // Alice generates identity
     const alice = await generateIdentity();
-    console.log("Alice PK length:", alice.publicKey.length, "SK length:", alice.privateKey.length);
 
     // Alice encapsulates to Bob’s PK
     const { capsule, sharedSecret: aliceSS } = await performKeyExchange(bob.publicKey);
-    console.log("Capsule length:", capsule.length, "Alice SS length:", aliceSS.length);
 
     // Bob decapsulates
+    // Pass the Hex string directly
     const bobSS = await recoverSessionKey(capsule, bob.privateKey);
-    console.log("Bob SS length:", bobSS.length);
 
-    // Compare secrets
-    console.log("Secrets match:", Buffer.compare(aliceSS, bobSS) === 0);
+    console.log("Alice SS:", aliceSS);
+    console.log("Bob SS:  ", bobSS);
+
+    // CHANGE: Compare strings directly
+    if (aliceSS === bobSS) {
+        console.log("✅ Secrets match!");
+    } else {
+        console.error("❌ Secrets do NOT match");
+    }
 
     // AES-GCM round trip
     const message = "Hello from Alice to Bob!";
     const packet = encryptGCM(message, aliceSS);
     console.log("Encrypted packet:", packet);
+
     const recovered = decryptGCM(packet, bobSS);
     console.log("Decrypted back:", recovered);
 }
