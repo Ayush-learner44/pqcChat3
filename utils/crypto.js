@@ -1,34 +1,10 @@
-// utils/crypto.js
+"use server";
+
 import crypto from "crypto";
 import KEMFactory from "../public/kem_liboqs.js";
 
 let ModulePromise = null;
 let sizes = null;
-
-// async function getKEM() {
-//     if (!ModulePromise) {
-//         ModulePromise = KEMFactory();
-//     }
-//     const Module = await ModulePromise;
-
-//     // Explicitly wait for runtime init
-//     if (typeof Module.HEAPU8 === "undefined") {
-//         await new Promise(resolve => {
-//             Module.onRuntimeInitialized = resolve;
-//         });
-//     }
-
-//     if (!sizes) {
-//         Module._kem_init();
-//         sizes = {
-//             pk: Module._kem_pk_len(),
-//             sk: Module._kem_sk_len(),
-//             ct: Module._kem_ct_len(),
-//             ss: Module._kem_ss_len(),
-//         };
-//     }
-//     return { Module, sizes };
-// }
 
 async function getKEM() {
     if (!ModulePromise) {
