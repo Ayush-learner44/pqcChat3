@@ -1,4 +1,3 @@
-// app/chat/components/ControlPanel.js
 
 export default function ControlPanel({
     users, recipient, onlineUsers, currentUser,
